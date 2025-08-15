@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+    <title>Fito Marketcap</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --background: 0 0% 100%;
+        --foreground: 224 71.4% 4.1%;
+        --card: 0 0% 100%;
+        --card-foreground: 224 71.4% 4.1%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 224 71.4% 4.1%;
+        --primary: 220.9 39.3% 11%;
+        --primary-foreground: 210 20% 98%;
+        --secondary: 220 14.3% 95.9%;
+        --secondary-foreground: 220.9 39.3% 11%;
+        --muted: 220 14.3% 95.9%;
+        --muted-foreground: 220 8.9% 46.1%;
+        --accent: 220 14.3% 95.9%;
+        --accent-foreground: 220.9 39.3% 11%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 210 20% 98%;
+        --border: 220 13% 91%;
+        --input: 220 13% 91%;
+        --ring: 224 71.4% 4.1%;
+        --radius: 0.75rem;
+        --success: 142.1 76.2% 36.3%;
+        --danger: 0 72.2% 50.6%;
+      }
+      html.dark {
+        --background: 224 71.4% 4.1%;
+        --foreground: 210 20% 98%;
+        --card: 224 71.4% 4.1%;
+        --card-foreground: 210 20% 98%;
+        --popover: 224 71.4% 4.1%;
+        --popover-foreground: 210 20% 98%;
+        --primary: 210 20% 98%;
+        --primary-foreground: 220.9 39.3% 11%;
+        --secondary: 215 27.9% 16.9%;
+        --secondary-foreground: 210 20% 98%;
+        --muted: 215 27.9% 16.9%;
+        --muted-foreground: 217.9 10.6% 64.9%;
+        --accent: 215 27.9% 16.9%;
+        --accent-foreground: 210 20% 98%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 210 20% 98%;
+        --border: 215 27.9% 16.9%;
+        --input: 215 27.9% 16.9%;
+        --ring: 216 12.2% 83.9%;
+        --success: 142.1 70.6% 45.3%;
+        --danger: 0 62.8% 50.6%;
+      }
+      body {
+        background-color: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+    </style>
+    <script>
+      (function() {
+        const theme = localStorage.getItem('theme');
+        if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              background: 'hsl(var(--background))',
+              foreground: 'hsl(var(--foreground))',
+              card: 'hsl(var(--card))',
+              'card-foreground': 'hsl(var(--card-foreground))',
+              popover: 'hsl(var(--popover))',
+              'popover-foreground': 'hsl(var(--popover-foreground))',
+              primary: {
+                DEFAULT: 'hsl(var(--primary))',
+                foreground: 'hsl(var(--primary-foreground))',
+              },
+              secondary: {
+                DEFAULT: 'hsl(var(--secondary))',
+                foreground: 'hsl(var(--secondary-foreground))',
+              },
+              muted: {
+                DEFAULT: 'hsl(var(--muted))',
+                foreground: 'hsl(var(--muted-foreground))',
+              },
+              accent: {
+                DEFAULT: 'hsl(var(--accent))',
+                foreground: 'hsl(var(--accent-foreground))',
+              },
+              destructive: {
+                DEFAULT: 'hsl(var(--destructive))',
+                foreground: 'hsl(var(--destructive-foreground))',
+              },
+              border: 'hsl(var(--border))',
+              input: 'hsl(var(--input))',
+              ring: 'hsl(var(--ring))',
+              success: 'hsl(var(--success))',
+              danger: 'hsl(var(--danger))',
+            },
+            borderRadius: {
+              lg: 'var(--radius)',
+              md: 'calc(var(--radius) - 2px)',
+              sm: 'calc(var(--radius) - 4px)',
+            },
+            animation: {
+              'marquee-slow': 'marquee 40s linear infinite',
+            },
+            keyframes: {
+                marquee: {
+                    '0%': { transform: 'translateX(0%)' },
+                    '100%': { transform: 'translateX(-50%)' },
+                },
+            },
+          },
+        },
+      }
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+          "react/": "https://esm.sh/react@^19.1.1/",
+          "react": "https://esm.sh/react@^19.1.1",
+          "recharts": "https://esm.sh/recharts@^3.1.2",
+          "@google/genai": "https://esm.sh/@google/genai"
+        }
+      }
+    </script>
+  <link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
