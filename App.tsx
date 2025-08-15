@@ -659,6 +659,7 @@ const CreateAdModal: React.FC<{
     const [imageSource, setImageSource] = useState<string | File>(adToEdit?.imageUrl || '');
     const [imagePreviewUrl, setImagePreviewUrl] = useState<string>(adToEdit?.imageUrl || '');
     const [imageSizeWarning, setImageSizeWarning] = useState<string>('');
+    const [isUploading, setIsUploading] = useState(false);
     const [url, setUrl] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -757,31 +758,26 @@ const CreateAdModal: React.FC<{
 
         let finalImageUrl = '';
         if (imageSource instanceof File) {
-            // --- VERCEL BLOB INTEGRATION POINT ---
-            // In a real app, you would upload the file to a serverless function
-            // which then uploads it to Vercel Blob storage and returns the URL.
-            // Example of what that might look like:
-            //
-            // try {
-            //   const formData = new FormData();
-            //   formData.append('file', imageSource);
-            //   const response = await fetch('/api/upload-ad', { method: 'POST', body: formData });
-            //   const { url } = await response.json();
-            //   finalImageUrl = url;
-            // } catch (error) {
-            //   alert('Image upload failed. Please try again.');
-            //   return;
-            // }
-            
-            // For now, we'll convert to a Base64 Data URL to maintain functionality without a backend.
-            // This is less efficient but works for a client-only setup.
-            finalImageUrl = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(imageSource as File);
-            });
-
+            setIsUploading(true);
+            try {
+                // This now points to your Vercel Serverless Function.
+                const response = await fetch(`/api/upload?filename=${encodeURIComponent(imageSource.name)}`, {
+                    method: 'POST',
+                    body: imageSource,
+                });
+                if (!response.ok) {
+                    throw new Error(`Upload failed with status: ${response.status}`);
+                }
+                const newBlob = await response.json();
+                finalImageUrl = newBlob.url; // Get the public URL from Vercel Blob
+            } catch (error) {
+                console.error('Image upload failed:', error);
+                alert('Image upload failed. Please check the console and try again.');
+                setIsUploading(false);
+                return; // Stop the function on failure
+            } finally {
+                setIsUploading(false);
+            }
         } else if (typeof imageSource === 'string') {
             finalImageUrl = imageSource;
         }
@@ -892,9 +888,9 @@ const CreateAdModal: React.FC<{
                     )}
                 </div>
                 <div className="p-6 mt-2 flex justify-end gap-4 bg-muted/30 rounded-b-lg">
-                    <button type="button" onClick={onClose} className="bg-secondary text-secondary-foreground hover:bg-secondary/80 font-bold py-2 px-4 rounded-md">Cancel</button>
-                    <button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold py-2 px-4 rounded-md">
-                        {isAdminMode || isEditing ? 'Save Changes' : 'Proceed to Payment'}
+                    <button type="button" onClick={onClose} className="bg-secondary text-secondary-foreground hover:bg-secondary/80 font-bold py-2 px-4 rounded-md" disabled={isUploading}>Cancel</button>
+                    <button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold py-2 px-4 rounded-md disabled:opacity-50 disabled:cursor-wait" disabled={isUploading}>
+                        {isUploading ? 'Uploading...' : (isAdminMode || isEditing ? 'Save Changes' : 'Proceed to Payment')}
                     </button>
                 </div>
             </form>
