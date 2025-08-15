@@ -2,10 +2,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { GoogleGenAI, Type } from "@google/genai";
-import { Ticker, ManualProject, CoinDetail, HistoricalData, Exchange, ManualExchange, RaribleCollection, RaribleCollectionsResponse, RaribleCurrency, Stock, StockQuote, AlphaMarket, AlphaMarketStatusResponse, AlphaNewsArticle, AlphaNewsResponse, AlphaTimeSeriesResponse, CustomAd, AIAnalysis } from './types';
+import { Ticker, ManualProject, CoinDetail, HistoricalData, Exchange, ManualExchange, Stock, StockQuote, AlphaMarket, AlphaMarketStatusResponse, AlphaNewsArticle, AlphaNewsResponse, AlphaTimeSeriesResponse, CustomAd, AIAnalysis } from './types';
 
 // --- CONFIG & TYPES ---
-type Page = 'crypto' | 'exchanges' | 'nft' | 'stocks' | 'news' | 'tools';
+type Page = 'crypto' | 'exchanges' | 'stocks' | 'news' | 'tools';
 type Theme = 'light' | 'dark';
 
 interface AdFeatureProps {
@@ -16,7 +16,6 @@ interface AdFeatureProps {
 }
 
 interface ApiKeys {
-    rarible: string;
     alphaVantage: string;
     alphaVantageNews: string;
     finnhub: string;
@@ -657,7 +656,9 @@ const CreateAdModal: React.FC<{
     isAdminMode: boolean;
     paypalClientId: string;
 }> = ({ onClose, onSave, adToEdit, isAdminMode, paypalClientId }) => {
-    const [imageUrl, setImageUrl] = useState('');
+    const [imageSource, setImageSource] = useState<string | File>(adToEdit?.imageUrl || '');
+    const [imagePreviewUrl, setImagePreviewUrl] = useState<string>(adToEdit?.imageUrl || '');
+    const [imageSizeWarning, setImageSizeWarning] = useState<string>('');
     const [url, setUrl] = useState('');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -684,7 +685,8 @@ const CreateAdModal: React.FC<{
 
     useEffect(() => {
         if (isEditing && adToEdit) {
-            setImageUrl(adToEdit.imageUrl);
+            setImageSource(adToEdit.imageUrl);
+            setImagePreviewUrl(adToEdit.imageUrl);
             setUrl(adToEdit.url);
             setStartDate(toInputDateTime(adToEdit.startDate));
             setBannerSize(adToEdit.bannerSize || '728x90');
@@ -702,6 +704,30 @@ const CreateAdModal: React.FC<{
         }
     }, [isEditing, adToEdit]);
 
+    useEffect(() => {
+        if (imageSource instanceof File) {
+            const objectUrl = URL.createObjectURL(imageSource);
+            setImagePreviewUrl(objectUrl);
+            
+            const img = new Image();
+            img.onload = () => {
+                const targetWidth = bannerSize === '728x90' ? 728 : 300;
+                const targetHeight = bannerSize === '728x90' ? 90 : 250;
+                if (img.width !== targetWidth || img.height !== targetHeight) {
+                    setImageSizeWarning(`Warning: Image is ${img.width}x${img.height}. Recommended size is ${targetWidth}x${targetHeight}.`);
+                } else {
+                    setImageSizeWarning('');
+                }
+            };
+            img.src = objectUrl;
+
+            return () => URL.revokeObjectURL(objectUrl); // Cleanup
+        } else if (typeof imageSource === 'string') {
+            setImagePreviewUrl(imageSource);
+            setImageSizeWarning('');
+        }
+    }, [imageSource, bannerSize]);
+
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -709,20 +735,13 @@ const CreateAdModal: React.FC<{
                 alert('File is too large. Please select an image under 2MB.');
                 return;
             }
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setImageUrl(reader.result as string);
-            };
-            reader.readAsDataURL(file);
+            setImageSource(file);
         }
     };
 
-    const handleProceed = (e: React.FormEvent) => {
+    const handleProceed = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!imageUrl) {
-            alert('Please upload an ad image.');
-            return;
-        }
+
         try {
             new URL(url.startsWith('http') ? url : `https://${url}`);
         } catch (_) {
@@ -736,8 +755,44 @@ const CreateAdModal: React.FC<{
             return;
         }
 
+        let finalImageUrl = '';
+        if (imageSource instanceof File) {
+            // --- VERCEL BLOB INTEGRATION POINT ---
+            // In a real app, you would upload the file to a serverless function
+            // which then uploads it to Vercel Blob storage and returns the URL.
+            // Example of what that might look like:
+            //
+            // try {
+            //   const formData = new FormData();
+            //   formData.append('file', imageSource);
+            //   const response = await fetch('/api/upload-ad', { method: 'POST', body: formData });
+            //   const { url } = await response.json();
+            //   finalImageUrl = url;
+            // } catch (error) {
+            //   alert('Image upload failed. Please try again.');
+            //   return;
+            // }
+            
+            // For now, we'll convert to a Base64 Data URL to maintain functionality without a backend.
+            // This is less efficient but works for a client-only setup.
+            finalImageUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(imageSource as File);
+            });
+
+        } else if (typeof imageSource === 'string') {
+            finalImageUrl = imageSource;
+        }
+
+        if (!finalImageUrl) {
+            alert('Please upload an ad image.');
+            return;
+        }
+
         const adPayload: Omit<CustomAd, 'id'> = {
-            imageUrl,
+            imageUrl: finalImageUrl,
             url,
             bannerSize,
             isAdminAd: isAdminMode,
@@ -782,63 +837,69 @@ const CreateAdModal: React.FC<{
         }
     };
 
-    const renderDetailsForm = () => (
-        <form onSubmit={handleProceed}>
-            <div className="p-6 grid grid-cols-1 gap-4">
-                <div>
-                    <label htmlFor="banner-size" className="block text-sm font-medium text-muted-foreground mb-1">Banner Size</label>
-                    <select id="banner-size" value={bannerSize} onChange={e => setBannerSize(e.target.value as '728x90' | '300x250')} required className="bg-background border border-input p-2 rounded-md w-full">
-                        <option value="728x90">Leaderboard (728x90)</option>
-                        <option value="300x250">Medium Rectangle (300x250)</option>
-                    </select>
-                </div>
-                 <div>
-                    <label htmlFor="ad-image" className="block text-sm font-medium text-muted-foreground mb-1">
-                        Ad Banner Image
-                        <span className="text-xs ml-2">
-                            (Recommended: {bannerSize === '728x90' ? '728x90' : '300x250'}px, max 2MB)
-                        </span>
-                    </label>
-                    <div className="mt-1 flex items-center">
-                        {imageUrl ? (
-                            <img src={imageUrl} alt="Ad preview" className="h-20 w-auto object-contain bg-muted p-1 rounded-md border border-input" />
-                        ) : (
-                            <div className={`flex items-center justify-center h-20 bg-muted rounded-md ${bannerSize === '728x90' ? 'w-40' : 'w-24'}`}>
-                                <span className="text-xs text-muted-foreground">Preview</span>
-                            </div>
-                        )}
-                        <label htmlFor="ad-image-upload" className="ml-5 bg-background border border-input rounded-md py-2 px-3 text-sm font-medium text-foreground hover:bg-accent cursor-pointer">
-                            <span>{imageUrl ? 'Change' : 'Upload'} Image</span>
-                            <input id="ad-image-upload" name="ad-image-upload" type="file" className="sr-only" accept="image/png, image/jpeg, image/gif" onChange={handleImageUpload} />
-                        </label>
+    const renderDetailsForm = () => {
+        const sizePlaceholders = {
+            '728x90': { container: 'w-full h-[45px] sm:h-[90px] max-w-[728px]', text: '728 x 90' },
+            '300x250': { container: 'w-[300px] h-[250px]', text: '300 x 250' },
+        };
+        const currentSize = sizePlaceholders[bannerSize];
+
+        return (
+            <form onSubmit={handleProceed}>
+                <div className="p-6 grid grid-cols-1 gap-4">
+                    <div>
+                        <label htmlFor="banner-size" className="block text-sm font-medium text-muted-foreground mb-1">Banner Size</label>
+                        <select id="banner-size" value={bannerSize} onChange={e => setBannerSize(e.target.value as '728x90' | '300x250')} required className="bg-background border border-input p-2 rounded-md w-full">
+                            <option value="728x90">Leaderboard (728x90)</option>
+                            <option value="300x250">Medium Rectangle (300x250)</option>
+                        </select>
                     </div>
-                </div>
-                <input type="url" placeholder="Target URL (e.g., https://fitochain.com)" value={url} onChange={e => setUrl(e.target.value)} required className="bg-background border border-input p-2 rounded-md w-full" />
-                <div>
-                    <label htmlFor="start-date" className="block text-sm font-medium text-muted-foreground mb-1">Start Date & Time (PST)</label>
-                    <input id="start-date" type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} required className="bg-background border border-input p-2 rounded-md w-full" />
-                </div>
-                {isAdminMode && (
-                    <>
-                        <div>
-                            <label htmlFor="end-date" className="block text-sm font-medium text-muted-foreground mb-1">End Date & Time (PST)</label>
-                            <input id="end-date" type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} disabled={isUnlimited} required={!isUnlimited} className="bg-background border border-input p-2 rounded-md w-full disabled:opacity-50" />
+                     <div>
+                        <label htmlFor="ad-image-upload" className="block text-sm font-medium text-muted-foreground mb-1">
+                            Ad Banner Image <span className="text-xs ml-2">(max 2MB)</span>
+                        </label>
+                        <div className="mt-2 flex flex-col items-center justify-center gap-3 transition-all duration-300">
+                             {imagePreviewUrl ? (
+                                <img src={imagePreviewUrl} alt="Ad preview" className={`bg-muted object-contain border border-input rounded-md ${currentSize.container}`} />
+                            ) : (
+                                <div className={`flex items-center justify-center bg-muted rounded-md border-2 border-dashed border-border ${currentSize.container}`}>
+                                    <span className="text-sm text-muted-foreground">{currentSize.text} Preview</span>
+                                </div>
+                            )}
+                            <label htmlFor="ad-image-upload" className="bg-background border border-input rounded-md py-2 px-3 text-sm font-medium text-foreground hover:bg-accent cursor-pointer">
+                                <span>{imagePreviewUrl ? 'Change' : 'Upload'} Image</span>
+                                <input id="ad-image-upload" name="ad-image-upload" type="file" className="sr-only" accept="image/png, image/jpeg, image/gif" onChange={handleImageUpload} />
+                            </label>
+                             {imageSizeWarning && <p className="text-sm text-amber-600 dark:text-amber-500 text-center">{imageSizeWarning}</p>}
                         </div>
-                        <div className="flex items-center gap-2">
-                            <input id="unlimited-ad" type="checkbox" checked={isUnlimited} onChange={e => setIsUnlimited(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
-                            <label htmlFor="unlimited-ad" className="text-sm text-muted-foreground">No end date (run indefinitely)</label>
-                        </div>
-                    </>
-                )}
-            </div>
-            <div className="p-6 mt-2 flex justify-end gap-4 bg-muted/30 rounded-b-lg">
-                <button type="button" onClick={onClose} className="bg-secondary text-secondary-foreground hover:bg-secondary/80 font-bold py-2 px-4 rounded-md">Cancel</button>
-                <button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold py-2 px-4 rounded-md">
-                    {isAdminMode || isEditing ? 'Save Changes' : 'Proceed to Payment'}
-                </button>
-            </div>
-        </form>
-    );
+                    </div>
+                    <input type="url" placeholder="Target URL (e.g., https://fitochain.com)" value={url} onChange={e => setUrl(e.target.value)} required className="bg-background border border-input p-2 rounded-md w-full" />
+                    <div>
+                        <label htmlFor="start-date" className="block text-sm font-medium text-muted-foreground mb-1">Start Date & Time (PST)</label>
+                        <input id="start-date" type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} required className="bg-background border border-input p-2 rounded-md w-full" />
+                    </div>
+                    {isAdminMode && (
+                        <>
+                            <div>
+                                <label htmlFor="end-date" className="block text-sm font-medium text-muted-foreground mb-1">End Date & Time (PST)</label>
+                                <input id="end-date" type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} disabled={isUnlimited} required={!isUnlimited} className="bg-background border border-input p-2 rounded-md w-full disabled:opacity-50" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input id="unlimited-ad" type="checkbox" checked={isUnlimited} onChange={e => setIsUnlimited(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary" />
+                                <label htmlFor="unlimited-ad" className="text-sm text-muted-foreground">No end date (run indefinitely)</label>
+                            </div>
+                        </>
+                    )}
+                </div>
+                <div className="p-6 mt-2 flex justify-end gap-4 bg-muted/30 rounded-b-lg">
+                    <button type="button" onClick={onClose} className="bg-secondary text-secondary-foreground hover:bg-secondary/80 font-bold py-2 px-4 rounded-md">Cancel</button>
+                    <button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90 font-bold py-2 px-4 rounded-md">
+                        {isAdminMode || isEditing ? 'Save Changes' : 'Proceed to Payment'}
+                    </button>
+                </div>
+            </form>
+        );
+    };
 
     const renderPaymentStep = () => (
         <>
@@ -983,10 +1044,6 @@ const SettingsModal: React.FC<{
                     <p className="text-sm text-muted-foreground mt-1">Your keys and credentials are stored securely in your browser.</p>
                 </div>
                 <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                    <div>
-                        <label htmlFor="rarible" className="block text-sm font-medium text-muted-foreground mb-1">Rarible API Key</label>
-                        <input id="rarible" name="rarible" type="password" placeholder="Enter your Rarible API key for NFTs" value={keys.rarible} onChange={handleChange} className="bg-background border border-input p-2 rounded-md w-full" />
-                    </div>
                     <div>
                         <label htmlFor="finnhub" className="block text-sm font-medium text-muted-foreground mb-1">Finnhub API Key</label>
                         <input id="finnhub" name="finnhub" type="password" placeholder="Enter your Finnhub API key for Stocks" value={keys.finnhub} onChange={handleChange} className="bg-background border border-input p-2 rounded-md w-full" />
@@ -1258,44 +1315,6 @@ const ExchangesTable: React.FC<{
         </Card>
     );
 };
-
-const NftCollectionCard = React.memo<{ collection: RaribleCollection }>(({ collection }) => {
-    const getCurrencyValue = (values: RaribleCurrency[], type: "USD" | "ETH"): number => {
-        const found = values.find(v => v["@type"] === type);
-        return found ? parseFloat(found.value) : 0;
-    };
-    
-    const floorPrice = getCurrencyValue(collection.floorPrice, "USD");
-    const volume24h = getCurrencyValue(collection.volume, "USD");
-
-    return (
-        <Card className="p-0 overflow-hidden group transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
-            <a href={`https://rarible.com/collection/${collection.id}`} target="_blank" rel="noopener noreferrer" className="block">
-                <div className="aspect-square w-full bg-muted overflow-hidden">
-                    {collection.image?.url.BIG ? (
-                        <img src={collection.image.url.BIG} alt={collection.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" loading="lazy" />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No Image</div>
-                    )}
-                </div>
-                <div className="p-4">
-                    <h3 className="font-bold text-card-foreground truncate" title={collection.name}>{collection.name}</h3>
-                    <div className="mt-2 flex justify-between items-center text-sm">
-                        <div className="flex flex-col">
-                            <span className="text-muted-foreground text-xs">Floor Price</span>
-                            <span className="font-semibold">{floorPrice > 0 ? formatCurrency(floorPrice) : 'N/A'}</span>
-                        </div>
-                        <div className="flex flex-col text-right">
-                             <span className="text-muted-foreground text-xs">24h Volume</span>
-                             <span className="font-semibold">{volume24h > 0 ? formatLargeNumber(volume24h) : 'N/A'}</span>
-                        </div>
-                    </div>
-                </div>
-            </a>
-        </Card>
-    );
-});
-
 
 const StocksTable = React.memo<{ stocks: Stock[]; onSelectStock: (stock: Stock) => void; }>(({ stocks, onSelectStock }) => (
      <Card className="p-0 overflow-hidden">
@@ -1595,59 +1614,6 @@ const ExchangesPage: React.FC<{
     );
 };
 
-const NftPage: React.FC<{ apiKey: string, onOpenSettings: () => void }> = ({ apiKey, onOpenSettings }) => {
-    const [collections, setCollections] = useState<RaribleCollection[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!apiKey) {
-            setIsLoading(false);
-            return;
-        }
-
-        const fetchCollections = async () => {
-            setIsLoading(true);
-            setError(null);
-            try {
-                const res = await fetch('https://api.rarible.org/v0.1/collections/all?sort=VOLUME_USD_DESC&size=20', {
-                    headers: { 'X-API-KEY': apiKey }
-                });
-                if (!res.ok) throw new Error(`Rarible API Error: ${res.statusText}. Check your API key and permissions.`);
-                const data: RaribleCollectionsResponse = await res.json();
-                setCollections(data.collections);
-            } catch (err) {
-                console.error(err);
-                setError(err instanceof Error ? err.message : 'Failed to fetch NFT collections. This may be a CORS issue if running locally.');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchCollections();
-    }, [apiKey]);
-    
-    if (!apiKey) {
-        return <ApiKeyWarning message="Please add your Rarible API key in the Settings menu to fetch NFT data." onOpenSettings={onOpenSettings} />;
-    }
-    
-    if (isLoading) return <Spinner />;
-    if (error) return <p className="text-center text-danger p-8">Error: {error}</p>;
-
-    return (
-         <div className="space-y-8">
-            <h1 className="text-4xl font-bold text-center">Top NFT Collections by Volume</h1>
-             {collections.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    {collections.map(c => <NftCollectionCard key={c.id} collection={c} />)}
-                </div>
-            ) : (
-                <p className="text-center text-muted-foreground p-8">No NFT collections found.</p>
-            )}
-        </div>
-    );
-};
-
 const StockTickerBar: React.FC<{apiKey: string}> = ({apiKey}) => {
     const [stocks, setStocks] = useState<{ symbol: string; quote: StockQuote }[]>([]);
 
@@ -1911,12 +1877,79 @@ const NewsPage: React.FC<{ apiKey: string, onOpenSettings: () => void }> = ({ ap
     );
 };
 
+const ProfitCalculator = () => {
+    const [invested, setInvested] = useState('');
+    const [initialPrice, setInitialPrice] = useState('');
+    const [sellingPrice, setSellingPrice] = useState('');
+
+    const results = useMemo(() => {
+        const inv = parseFloat(invested);
+        const init = parseFloat(initialPrice);
+        const sell = parseFloat(sellingPrice);
+
+        if (isNaN(inv) || isNaN(init) || isNaN(sell) || inv <= 0 || init <= 0) {
+            return { profit: 0, roi: 0, valid: false };
+        }
+        
+        const units = inv / init;
+        const finalValue = units * sell;
+        const profit = finalValue - inv;
+        const roi = (profit / inv) * 100;
+
+        return { profit, roi, valid: true };
+    }, [invested, initialPrice, sellingPrice]);
+
+    const isProfit = results.profit >= 0;
+
+    return (
+        <Card>
+            <h2 className="text-2xl font-bold mb-2">Profit & Loss Calculator</h2>
+            <p className="text-muted-foreground mb-6">Calculate the potential profit or loss from your trades.</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label htmlFor="invested" className="block text-sm font-medium text-muted-foreground mb-1">Invested Amount ($)</label>
+                    <input id="invested" type="number" placeholder="e.g., 1000" value={invested} onChange={e => setInvested(e.target.value)} className="bg-background border border-input p-2 rounded-md w-full" />
+                </div>
+                <div>
+                    <label htmlFor="initialPrice" className="block text-sm font-medium text-muted-foreground mb-1">Initial Price per Unit ($)</label>
+                    <input id="initialPrice" type="number" placeholder="e.g., 50.25" value={initialPrice} onChange={e => setInitialPrice(e.target.value)} className="bg-background border border-input p-2 rounded-md w-full" />
+                </div>
+                <div>
+                    <label htmlFor="sellingPrice" className="block text-sm font-medium text-muted-foreground mb-1">Selling Price per Unit ($)</label>
+                    <input id="sellingPrice" type="number" placeholder="e.g., 65.50" value={sellingPrice} onChange={e => setSellingPrice(e.target.value)} className="bg-background border border-input p-2 rounded-md w-full" />
+                </div>
+            </div>
+
+            <div className="border-t border-border pt-6 mt-6">
+                <h3 className="text-lg font-semibold mb-4 text-center">Results</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center">
+                    <div>
+                        <p className="text-sm text-muted-foreground">Profit / Loss</p>
+                        <p className={`text-3xl font-bold ${isProfit ? 'text-success' : 'text-danger'}`}>
+                            {results.valid ? formatCurrency(results.profit) : '$0.00'}
+                        </p>
+                    </div>
+                    <div>
+                        <p className="text-sm text-muted-foreground">Return on Investment (ROI)</p>
+                        <p className={`text-3xl font-bold ${isProfit ? 'text-success' : 'text-danger'}`}>
+                            {results.valid ? results.roi.toFixed(2) : '0.00'}%
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </Card>
+    );
+};
+
+
 const ToolsPage: React.FC = () => (
-    <div className="text-center p-8">
-        <h1 className="text-4xl font-bold">Tools</h1>
-        <p className="text-muted-foreground mt-2">This page is under construction.</p>
+    <div className="space-y-8 max-w-4xl mx-auto">
+        <h1 className="text-4xl font-bold text-center">Tools</h1>
+        <ProfitCalculator />
     </div>
 );
+
 
 // --- MAIN APP COMPONENT ---
 
@@ -1928,7 +1961,7 @@ const App: React.FC = () => {
     const [showAdminLogin, setShowAdminLogin] = useState(false);
     const [adminCreds, setAdminCreds] = useState<AdminCredentials>({ username: 'admin', password: 'admin' });
 
-    const [apiKeys, setApiKeys] = useState<ApiKeys>({ rarible: '', alphaVantage: '', alphaVantageNews: '', finnhub: '', gemini: '', paypal: '' });
+    const [apiKeys, setApiKeys] = useState<ApiKeys>({ alphaVantage: '', alphaVantageNews: '', finnhub: '', gemini: '', paypal: '' });
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     
     const [customAds, setCustomAds] = useState<CustomAd[]>(() => {
@@ -1960,6 +1993,10 @@ const App: React.FC = () => {
                 if (parsedCreds && typeof parsedCreds.username === 'string' && parsedCreds.username.trim() && typeof parsedCreds.password === 'string') {
                     setAdminCreds(parsedCreds);
                 }
+            }
+            const savedIsAdmin = localStorage.getItem('fitoMarketcap_isAdmin');
+            if (savedIsAdmin === 'true') {
+                setIsAdminMode(true);
             }
         } catch (e) { console.error("Could not load data from localStorage", e); }
     }, []);
@@ -2015,10 +2052,16 @@ const App: React.FC = () => {
     const handleLogin = (user: string, pass: string): boolean => {
         if (user === adminCreds.username && pass === adminCreds.password) { 
             setIsAdminMode(true);
+            localStorage.setItem('fitoMarketcap_isAdmin', 'true');
             setShowAdminLogin(false);
             return true;
         }
         return false;
+    };
+    
+    const handleLogout = () => {
+        setIsAdminMode(false);
+        localStorage.removeItem('fitoMarketcap_isAdmin');
     };
     
     const adProps: AdFeatureProps = { customAds, onCreate: () => { setAdToEdit(null); setShowCreateAdModal(true); }, onEdit: handleEditAd, onDelete: handleDeleteAd };
@@ -2028,7 +2071,6 @@ const App: React.FC = () => {
         switch (page) {
             case 'crypto': return <CryptoPage theme={theme} isAdminMode={isAdminMode} geminiApiKey={apiKeys.gemini} paypalClientId={apiKeys.paypal} onOpenSettings={handleOpenSettings} />;
             case 'exchanges': return <ExchangesPage isAdminMode={isAdminMode} manualExchanges={manualExchanges} onAdd={() => { setExchangeToEdit(null); setShowExchangeModal(true); }} onEdit={handleEditExchange} onDelete={handleDeleteExchange} />;
-            case 'nft': return <NftPage apiKey={apiKeys.rarible} onOpenSettings={handleOpenSettings} />;
             case 'stocks': return <StocksPage theme={theme} finnhubKey={apiKeys.finnhub} alphaVantageKey={apiKeys.alphaVantage} geminiApiKey={apiKeys.gemini} onOpenSettings={handleOpenSettings} />;
             case 'news': return <NewsPage apiKey={apiKeys.alphaVantageNews} onOpenSettings={handleOpenSettings} />;
             case 'tools': return <ToolsPage />;
@@ -2047,7 +2089,7 @@ const App: React.FC = () => {
                             </div>
                             <div className="hidden md:block">
                                 <div className="ml-10 flex items-baseline space-x-4">
-                                    {(['crypto', 'exchanges', 'nft', 'stocks', 'news', 'tools'] as Page[]).map(p => (
+                                    {(['crypto', 'exchanges', 'stocks', 'news', 'tools'] as Page[]).map(p => (
                                         <button key={p} onClick={() => setPage(p)} className={`capitalize px-3 py-2 rounded-md text-sm font-medium transition-colors ${page === p ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{p}</button>
                                     ))}
                                 </div>
@@ -2061,7 +2103,7 @@ const App: React.FC = () => {
                                 {theme === 'dark' ? <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" /></svg> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 14.464A1 1 0 106.465 13.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 11a1 1 0 100-2H4a1 1 0 100 2h1z" clipRule="evenodd" /></svg>}
                             </button>
                              {isAdminMode ? (
-                                <button onClick={() => setIsAdminMode(false)} className="text-sm font-medium px-3 py-1.5 rounded-md bg-danger/80 text-danger-foreground hover:bg-danger">Logout</button>
+                                <button onClick={handleLogout} className="text-sm font-medium px-3 py-1.5 rounded-md bg-danger/80 text-danger-foreground hover:bg-danger">Logout</button>
                             ) : (
                                 <button onClick={() => setShowAdminLogin(true)} className="text-sm font-medium px-3 py-1.5 rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80">Admin</button>
                             )}
@@ -2076,7 +2118,7 @@ const App: React.FC = () => {
                 {isMobileMenuOpen && (
                     <div className="md:hidden">
                         <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
-                            {(['crypto', 'exchanges', 'nft', 'stocks', 'news', 'tools'] as Page[]).map(p => (
+                            {(['crypto', 'exchanges', 'stocks', 'news', 'tools'] as Page[]).map(p => (
                                 <button key={p} onClick={() => { setPage(p); setIsMobileMenuOpen(false); }} className={`capitalize block w-full text-left px-3 py-2 rounded-md text-base font-medium ${page === p ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}>{p}</button>
                             ))}
                         </div>

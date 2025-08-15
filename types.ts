@@ -103,30 +103,6 @@ export interface ManualExchange {
     markets: number;
 }
 
-
-export interface RaribleCurrency {
-    "@type": "USD" | "ETH";
-    value: string;
-}
-
-export interface RaribleCollection {
-    id: string;
-    name: string;
-    image?: {
-        url: {
-            BIG: string;
-        }
-    };
-    floorPrice: RaribleCurrency[];
-    volume: RaribleCurrency[];
-}
-
-export interface RaribleCollectionsResponse {
-    collections: RaribleCollection[];
-    continuation?: string;
-}
-
-
 export interface Stock {
     symbol: string;
     name: string;
